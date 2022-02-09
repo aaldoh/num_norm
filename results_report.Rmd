@@ -1,0 +1,497 @@
+---
+title: "Study 1: Results Overview"
+floatsintext : yes
+output: 
+  bookdown::html_document2:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    highlight: pygments
+    code_folding: hide
+    css: table-style.css
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+set.seed(1234)
+
+if (!require("pacman")) install.packages("pacman");
+library(pacman)
+pacman::p_load(here, MASS, svglite, ggplot2, papaja, lavaan, tidyverse, knitr, kableExtra, codebook, psych, rlang, bfrr)
+
+wd <- getwd()
+if (!dir.exists("clean_data")) {dir.create(file.path(wd, "clean_data"))}
+if (!dir.exists("figures")) {dir.create(file.path(wd, "figures"))}
+
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, warning = FALSE, message = FALSE, autodep = TRUE, fig.path = "figures/")
+options(mc.cores = parallel::detectCores(), ## Run chains in parallel
+        knitr.kable.NA = "") ## Don't show NAs in tables
+ggplot2::theme_set(theme_apa() +
+                     theme(plot.caption = element_text(hjust = 0),
+                           plot.caption.position =  "plot",
+                           plot.title.position = "plot"))
+
+export <- haven::read_spss(here("raw_data/01_EXPORTED.sav"))
+```
+
+```{r data-cleaning, include=FALSE}
+export[, c(2:5, 15, 17)] <- haven::as_factor(export[, c(2:5, 15, 17)])
+
+raw <- export %>%
+  mutate(att_checkbi = ifelse(att_check == 3, 1, 0) %>% as_factor(.),
+         condition = as_factor(export$condition) %>% set_attrs(., labels = c("dynamic" = 1, "static" = 2, "none" = 3)) %>% relevel(., "dynamic"),
+         expintent_avg = rowMeans(across(intention_1:expectation_1), na.rm = T),
+         cons_proj = select(., cons_now_perc_1, cons_next_perc_1, cons_six_perc_1) %>% rowMeans(., na.rm = TRUE),
+         genderbi = na_if(gender, "Other") %>% droplevels() %>% recode_factor(., "Male" = -1, "Female" = 1),
+         conformity_3 = 8 - conformity_3,
+         conformity_mean = rowMeans(select(., starts_with("conformity_")), na.rm = TRUE),
+         age_c = age - mean(age, na.rm = TRUE)) %>%
+  rename_with(., .fn = ~ str_remove(., "_1"), .cols = c(interest_1:politics_1, meat_cons_1))
+
+# excluding vegetarians and attention check fails
+#complete <- raw %>% filter(att_check == 1)
+complete <- raw %>% filter(!is.na(conformity_1))
+noveg <- complete %>% filter(veg != "Yes")
+
+# excluding unneeded fields
+clean <- noveg %>%
+  select(-RecordedDate, -veg, -att_check) %>%
+  mutate(condition = relevel(condition, "dynamic"),
+         cons_proj_c = cons_proj - mean(cons_proj), #centering projected cons
+         conformity_mean_c = conformity_mean - mean(conformity_mean)) %>% #centering conformity
+  cbind(., psych::dummy.code(.$condition))
+
+# outliers
+mcd     <- cov.mcd(clean[,c(5:13, 17:22)], quantile.used = nrow(clean[,c(5:13, 17:22)])*.75)
+mcd_mah <- mahalanobis(clean[,c(5:13, 17:22)], mcd$center,mcd$cov)
+cutoff  <- qchisq(p = 0.99, df = ncol(clean[,c(5:13, 17:22)]))
+no_out  <- clean[mcd_mah <= cutoff, ]
+
+saveRDS(clean, file = "clean_data/clean.rds")
+saveRDS(no_out, file = "clean_data/no_out.rds")
+haven::write_sav(clean, "clean_data/clean.sav")
+
+# correlation
+mcor = cor(clean[,c(5:6, 24, 15, 25, 27)], use = "pairwise.complete.obs")
+symnum(mcor)
+
+##assumption set up
+random = rchisq(nrow(clean), 7)
+fake = lm(random ~., data = clean[ , -1])
+standardized = rstudent(fake)
+fitted = scale(fake$fitted.values)
+
+assumptions <- list(additivity = cor(mcor[ , -1]) %>% symnum(),
+                    homogeneity = plot(fitted, standardized) + abline(0,0) + abline(v = 0), ##homog and s
+                    normality = hist(standardized), ##multivariate normality
+                    linearity = qqnorm(standardized)) ##multivariate linearity
+```
+
+```{r data-overview, include=FALSE}
+describeBy(clean, clean$condition) # check distribution and normality
+
+# participants
+data_desc <- c(total_n = nrow(raw),
+               incomp_n = nrow(raw) - nrow(complete),
+               veg_n = nrow(complete) - nrow(noveg),
+               clean_n = nrow(clean)) 
+# age
+age_desc <- clean %>%
+  summarise(min_age = min(age),
+            max_age = max(age),
+            m_age = printnum(mean(age)),
+            sd_age = printnum(sd(age)))
+# gender
+gender_freq <- round(100 * prop.table(table(clean$gender)), digits = 2)
+
+# outcomes
+measure_sum <- clean %>%
+  summarise(m_interest = mean(interest),
+            m_attitude = mean(attitude),
+            m_int_exp = mean(expintent_avg),
+            m_cons = mean(meat_cons),
+            m_cons_proj = mean(cons_proj),
+            m_conformity = mean(conformity_mean, na.rm = T),
+            sd_interest = sd(interest),
+            sd_attitude = sd(attitude),
+            sd_int_exp = sd(expintent_avg),
+            sd_cons = sd(meat_cons),
+            sd_cons_proj = sd(cons_proj),
+            sd_conformity = sd(conformity_mean, na.rm = T))
+
+# reliability
+cron <- clean %>% select(conformity_1:conformity_6) %>% psych::alpha() # scale reliability
+
+# correlation matrix
+measure.tib <- tibble(Measure = c("1. Interest", "2. Attitude", "3. Intention/Expectation", "4. Own consumption", "5. Projected consumption", "6. Conformity"),
+                      Mean = unlist(measure_sum[, 1:6]),
+                      SD = unlist(measure_sum[, 7:12])) %>%
+  cbind(., mcor) %>% select(-conformity_mean) %>% remove_rownames() 
+```
+
+# Methods {.tabset .tabset-pills}
+
+## Design and procedure
+
+A double blind, between-participants experimental design was employed in
+the study. The study was presented as a survey on attitudes toward meat
+consumption. All participants were directed from their recruitment
+platform to a Qualtrics survey. There were 3 conditions. In the
+experimental condition, participants read a normative statement
+depicting a trending minority norm. In the control conditions,
+participants either read a statement depicting a minority norm, or did
+not read any text and so proceeded to the dependent measures without an
+intervening task.
+
+After participants read the statements, they completed dependent
+measures relating to meat consumption, followed by demographic questions
+and a measure of conformity.
+
+## Participants
+
+A total of `r data_desc[[1]]` participants were recruited through a
+survey posted on Prolific. `r data_desc[[2]]` were excluded due to
+incomplete responses, and `r data_desc[[3]]` were excluded as they are
+vegan/vegetarian. Using a robust Mahalanobis distance based on the
+Minimum Covariance Determinant, `r nrow(clean) - nrow(no_out)`
+multivariate outliers were detected and removed. The final sample (*N* =
+`r data_desc[[4]]`) ranged in age `r age_desc$min_age` to
+`r age_desc$max_age` (*M~age~* = `r age_desc$m_age`, *SD~age~* =
+`r age_desc$sd_age`). The participants were predominantly female
+(`r gender_freq[2]`%). The participants received £0.35 (\$0.45) for
+successfully completing the task.
+
+## Normative statements
+
+**Trending norm.** In the trending norm condition, the text read:
+'Research from early 2020 has found that 48% of British people engage in
+one or more of the following behaviours:
+
+• Eating small portions of meat • Opting out of eating meat several days
+of the week • Adopting a vegan/vegetarian diet
+
+This has increased from 37% in 2018.'
+
+**Minority norm.** In the minority norm condition, the text read:
+'Research from early 2020 has found that 48% of British people engage in
+one or more of the following behaviours:
+
+• Eating small portions of meat • Opting out of eating meat several days
+of the week • Adopting a vegan/vegetarian diet'
+
+**No norm control.** The no norm control condition did not have any
+text.
+
+## Measures
+
+**Demographic questions.** Participants answered questions relating to
+their demographic characteristics (e.g., age, gender, political
+position; see Appendix A).
+
+**Dependent measures.** We measured interest in eating less meat,
+attitudes towards eating meat, intentions and expectations to limit own
+meat consumption. Additionally, we measured expectations about future
+meat consumption. All primary outcomes were measured using single item
+measures.
+
+*Interest.* To measure interest in limiting meat consumption,
+participants responded to the statement: "I am interested in eating less
+meat" on a 0-100 scale (0 = Not at all interested, 50 = Somewhat
+interested, 100 = Extremely interested).
+
+*Attitudes.* To measure attitudes, participants responded to the
+statement: "My attitude towards eating less meat is..." on a 0-100
+slider scale (0 = Extremely unfavourable, 50 = Neither unfavourable nor
+favourable, 100 = Extremely favourable).
+
+*Intentions.* To measure intentions, participants responded to the
+statement: "I intend to eat less meat within the next year" on a 0-100
+slider scale (0 = Very strongly disagree, 50 = Neither agree nor
+disagree, 100 = Very strongly agree).
+
+*Expectations*. To measure expectations, participants responded to the
+statement: "I expect to eat less meat within the next year" on a 0-100
+slider scale (0 = Very strongly disagree, 50 = Neither agree nor
+disagree, 100 = Very strongly agree).
+
+*Estimates of future meat consumption.* Participants responded to 3
+statements estimating the meat consumption of British people "THIS
+year," "NEXT year," and "SIX years from now". The questions were
+answered on a slider scale from 0-100%.
+
+*Controlled variables.* To control for participants' background,
+participants reported their political position (1 = very left wing, 7 =
+very right wing), age, gender, and whether they were vegan or
+vegetarian. We also measured conformity using 6 items from the
+Iowa-Netherlands Comparison Orientation Measure (Gibbons & Buunk, 1999)
+on a 7-point Likert scale (1 = strongly disagree, 7 = strongly agree).
+
+# Results
+
+## Overview {.tabset .tabset-pills}
+
+### Randomization check
+
+```{r rand-check, include = FALSE}
+age_stat <- apa_print(aov(age ~ condition, clean)) # age
+pol_stat <- apa_print(aov(politics ~ condition, clean)) # political position
+gender_stat <- apa_print(chisq.test(clean$condition, clean$gender), n = nrow(clean)) # gender
+nation_stat <- apa_print(chisq.test(clean$condition, clean$country), n = nrow(clean)) # nation
+```
+
+A preliminary randomization check was conducted. The check revealed no
+systematic differences between the three conditions in gender, age,
+political position, and home country (all *p*'s \> .05).
+
+### Reliability and inter-correlations
+
+```{r correlation, results = "asis"}
+measure.tib %>%
+  kable(caption = "Means (M), standard deviations (SD), and inter-correlations among study measures.", col.names = c("Measure", "$M$", "$SD$", 1:5), digits = 2, escape = F) %>% 
+  add_header_above(c(" " = 3, "Correlations" = 5)) %>%
+  kable_styling()
+```
+
+## Confirmatory Analyses
+
+### Does trending norm (versus minority norm) information lead to more positive attitudes, intentions, interest, and expectations to limit own meat consumption?
+
+```{r h1-desc, results = "asis"}
+outcomes_desc <- clean %>%
+  group_by(condition) %>%
+  summarise(n = n(),
+            m_interest = mean(interest),
+            m_attitude = mean(attitude),
+            m_int_exp = mean(expintent_avg),
+            sd_interest = sd(interest),
+            sd_attitude = sd(attitude),
+            sd_int_exp = sd(expintent_avg), .groups = "rowwise") %>% printnum()
+
+outcomes_tab <- paste(unlist(outcomes_desc[3:5]), unlist(outcomes_desc[6:8]), sep = ' $\\pm$ ')
+
+outcomes.tib <- tibble(Measure = c("1. Interest", "2. Attitude", "3. Intention/Expectation"),
+                       Dynamic = unlist(outcomes_tab[c(1,4,7)]),
+                       Static = unlist(outcomes_tab[c(2,5,8)]),
+                       None     = unlist(outcomes_tab[c(3,6,9)]))
+
+outcomes.tib %>%
+  kable(caption = "Outcomes by condition ($M$ $\\pm$ $SD$)", digits = 2, escape = F) %>% 
+  add_header_above(c(" " = 1, "Conditions" = 3)) %>%
+  kable_styling()
+```
+
+```{r h1-analysis, include=FALSE}
+# model
+h1.mod <- '
+interest  ~ static + none
+attitude  ~ static + none
+expintent_avg ~ static + none'
+
+h1.fit <- sem(model = h1.mod, data = clean)
+h1.out <-  summary(h1.fit, standardized = T, ci = T, fit.measures = T, rsq = T)
+
+h1.effect <- sapply(1:6, function(x) bfrr(-1*h1.out$PE[x, 5],h1.out$PE[x,6], sample_df = h1.out$FIT["ntotal"] - 1, model = "normal", mean = 0, sd = 5, tail = 1, criterion = 3,
+                                          rr_interval = list(mean = c(-15, 15), sd = c(0, 15)), precision = 0.05))[-14,] # effect sizes
+
+h1.rr <- sapply(1:6, function(x) paste0("HN[", toString(h1.effect[,x]$RR$sd), "]"))
+
+h1.table <- cbind(h1.out$PE[1:6,c(1, 3, 5, 12, 6:10)], unlist(h1.effect[3,]), h1.rr, unlist(h1.effect[5,])) %>% 
+  .[with(., order(rhs, decreasing = TRUE)), ] %>% 
+  select(., -2) %>%
+  mutate(pvalue = printp(pvalue))
+```
+
+```{r h1-table, results='asis'}
+h1.table %>% 
+  kable(caption = "Path model (outcomes ~ condition)", row.names = F, escape = F, col.names = c("Model path", "$\\beta$", "$B$", "$SE$", "$z$", "$\\textit{p}$", "$LL$", "$UL$", "$B_{{H}(0, 5)}$", "RR", "Conclusion$^a$"), digits = 2) %>%
+  add_header_above(c(" " = 6, "95% CI" = 2, "Bayesian inference" = 3)) %>%
+  kable_styling() %>%
+  pack_rows("Trending vs. minority", 1, 3) %>%
+  pack_rows("Trending vs. none", 4, 6) %>%
+  footnote(general_title = "Note.",
+           general = paste0("CI = confidence interval; $LL$ = lower limit; $UL$ = upper limit. Model fit: $\\chi^2$(", h1.out$FIT[["baseline.df"]], ", N = ", h1.out$FIT[["ntotal"]], ") = ", round(h1.out$FIT[["baseline.chisq"]],2), ", $\\textit{p}$ ",
+                            printp(h1.out$FIT[["baseline.pvalue"]]), "; CFI = ", printnum(h1.out$FIT[["cfi"]]), "; RMSEA = ", printnum(h1.out$FIT[["rmsea"]])),
+           alphabet = c("H0 = evidence for null hypothesis, no = no conclusion, H1 = evidence for alternative hypothesis."),
+           footnote_as_chunk = T)
+```
+
+```{r h1-plots, fig.cap = "Violin plots of outcome variables by condition"}
+out_plots <- clean %>%
+  select(-intention, -expectation)  %>%
+  pivot_longer(cols = c("interest", "attitude", "expintent_avg"), names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x = condition, y = value)) +
+  facet_wrap(~ variable, labeller = as_labeller(c('attitude'="Attitude", 'expintent_avg'="Intention/Expectation", 'interest'="Interest"))) +
+  geom_violin(trim = FALSE) + 
+  stat_summary(fun.data = "mean_sdl",  fun.args = list(mult = 1), geom = "pointrange", color = "black") +
+  ggtitle("Distribution of outcomes by condition") +
+  xlab("Norm Condition") +
+  ylab("Value (%)") +
+  scale_x_discrete(limits = c("dynamic", "static", "none"), labels=c("dynamic" = "Dynamic", "static" = "Static","none" = "None")) +
+  papaja::theme_apa()
+
+#ggsave(file="out_dist.svg", plot=out_plots)
+out_plots
+```
+
+### Will participants in the trending minority norm condition be more likely (than minority norm only) to expect a decrease in meat consumption by British people?
+
+```{r h2-analysis, include = FALSE}
+cons_desc <- clean %>%
+  group_by(condition) %>%
+  summarise(n = n(),
+            m_current = mean(cons_now_perc),
+            m_next = mean(cons_next_perc),
+            m_six = mean(cons_six_perc),
+            m_composite = mean(cons_proj),
+            sd_current = sd(cons_now_perc),
+            sd_next = sd(cons_next_perc),
+            sd_six = sd(cons_six_perc),
+            sd_composite = sd(cons_proj), .groups = "rowwise")
+
+h2.test <- apa_print(aov(cons_proj ~ condition, clean)) 
+```
+
+```{r h2-table, results = "asis"}
+cons_desc[c(1:2, 6, 10)] %>%
+  kable(caption = "Projected consumption average by condition", col.names = c("Condition", "n",  "$M$", "$SD$"), escape = F, digits = 2) %>% 
+  kable_styling() %>%
+  footnote(general_title = "Note.",
+           general = h2.test$full_result$condition,
+           footnote_as_chunk = T)
+```
+
+### Does the perceived current and future popularity of sustainable eating behaviours correlate with interest, attitudes, expectations, and intentions to limit own meat consumption?
+
+```{r h3-analysis, include = FALSE}
+h3.mod <- '
+interest  ~ cons_proj
+attitude  ~ cons_proj
+expintent_avg ~ cons_proj'
+
+h3.fit <- sem(model = h3.mod, data = clean)
+h3.out <-  summary(h3.fit, standardized = T, ci = T, fit.measures = T, rsq = T)
+
+h3.effect <- sapply(1:3, function(x) bfrr(h3.out$PE[x, 5],h3.out$PE[x,6], sample_df = h3.out$FIT["ntotal"] - 1, model = "normal", mean = 0, sd = 5, tail = 1, criterion = 3,
+                                          rr_interval = list(mean = c(-15, 15), sd = c(0, 15)), precision = 0.05))[-14,] # effect sizes
+
+h3.rr <- sapply(1:3, function(x) paste0("HN[", toString(h3.effect[,x]$RR$sd), "]"))
+
+h3.table <- cbind(h3.out$PE[1:3, c(1, 3, 5, 11, 6:10)], unlist(h3.effect[3,]), h3.rr, unlist(h3.effect[5,])) %>% select(., -2) %>%
+  mutate(pvalue = printp(pvalue))
+```
+
+```{r h3-table, results='asis'}
+h3.table %>% 
+  kable(caption = "Path model (outcomes ~ projected consumption)", row.names = F, escape = F, col.names = c("Model path", "$\\beta$", "$B$", "$SE$", "$z$", "$\\textit{p}$", "$LL$", "$UL$", "$B_{{H}(0, 5)}$", "RR", "Conclusion$^a$"), digits = 2) %>%
+  add_header_above(c(" " = 6, "95% CI" = 2, "Bayesian inference" = 3)) %>%
+  kable_styling() %>%
+  footnote(general_title = "Note.",
+           general = paste0("CI = confidence interval; $LL$ = lower limit; $UL$ = upper limit. Model fit: $\\chi^2($", h3.out$FIT[["baseline.df"]], ", N = ", h3.out$FIT[["ntotal"]], ") = ", round(h3.out$FIT[["baseline.chisq"]],2), ", $\\textit{p}$ ",
+                            printp(h3.out$FIT[["baseline.pvalue"]]), "; CFI = ", printnum(h3.out$FIT[["cfi"]]), "; RMSEA = ", printnum(h3.out$FIT[["rmsea"]])),
+           alphabet = c("H0 = evidence for null hypothesis, no = no conclusion, H1 = evidence for alternative hypothesis."),
+           footnote_as_chunk = T)
+```
+
+## Exploratory Analyses
+
+### Is projected meat consumption a mediator of the effect of trending minority norms vs. minority only on meat consumption outcomes?
+
+```{r h4-analysis, include = FALSE}
+h4.mod <- '
+interest  ~ a*cons_proj + b*static
+attitude  ~ c*cons_proj + d*static
+expintent_avg ~ e*cons_proj + f*static
+cons_proj ~ t*static
+
+ta := t*a
+tc := t*c
+te := t*e
+totint := ta + b
+totatt := tc + d
+totintent := te + f'
+
+h4.fit <- sem(h4.mod,data=clean, se="bootstrap", test="bootstrap", bootstrap = 5000, meanstructure=TRUE)
+h4.out <- summary(h4.fit, standardized = T, ci = T, fit.measures = T)
+h4.pam <- parameterEstimates(h4.fit)
+
+h4.table <- h4.out$PE[c(1:7, 21:26),c(1, 3, 6, 13, 7:11)] %>% .[with(., order(rhs, decreasing = FALSE)), ]
+h4.table <- rbind("", h4.table[1:3,], "", h4.table[4:13,] ) %>%
+  mutate_at(vars(3:9), ~as.numeric(as.character(.))) %>%
+  mutate(pvalue = printp(pvalue),
+         lhs = c("~ Projected consumption", "Interest", "Attitude", "Intention/Expectation", 
+                 "~ Condition", "Interest", "Attitude", "Intention/Expectation", "Projected consumption", 
+                 "Interest", "Attitude", "Intention/Expectation", "Interest", "Attitude", "Intention/Expectation")) %>% 
+  select(., -2) # effect sizes
+```
+
+```{r h4-table, results='asis'}
+h4.table %>% 
+  kable(caption = "Mediation model", row.names = F, escape = F, col.names = c("Model path", "$\\beta$", "$B$", "$SE$", "$z$", "$\\textit{p}$", "$LL$", "$UL$"), digits = 2) %>%
+  add_header_above(c(" " = 6, "95% CI" = 2)) %>%
+  kable_styling() %>%
+  pack_rows("Direct effects", 1, 9) %>%
+  pack_rows("Indirect effects (~ condition > projected consumption)", 10, 12) %>%
+  pack_rows("Total effects (~ condition + condition > projected consumption)", 13, 15) %>%
+  footnote(general_title = "Note.",
+           general = paste0("CI = confidence interval; $LL$ = lower limit; $UL$ = upper limit. Model fit: $\\chi^2$(", h4.out$FIT[["baseline.df"]], ", N = ", h4.out$FIT[["ntotal"]], ") = ", round(h4.out$FIT[["baseline.chisq"]],2), ", $\\textit{p}$ ",
+                            printp(h4.out$FIT[["baseline.pvalue"]]), "; CFI = ", printnum(h4.out$FIT[["cfi"]]), "; RMSEA = ", printnum(h4.out$FIT[["rmsea"]])),
+           footnote_as_chunk = T)
+```
+
+```{r h4-plot, fig.cap = "Relationship between projected consumption and outcomes"}
+scat_plots <- clean %>%
+  select(-intention, -expectation)  %>%
+  pivot_longer(cols = c("interest", "attitude", "expintent_avg"), names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x = cons_proj, y = value)) +
+  facet_wrap(~ variable, labeller = as_labeller(c('attitude'="Attitude", 'expintent_avg'="Intent/Expectation", 'interest'="Interest"))) +
+  geom_smooth(aes(color = condition), method = loess, se = F) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "point", size = 0.5, alpha = 0.4) +
+  ggtitle("Relationship between projected consumption and outcome variables") +
+  xlab("Projected consumption (% limiting meat eating)") +
+  ylab("Value of outcome (%)") +
+  papaja::theme_apa()
+
+#ggsave(file="corr_scat.svg", plot=scat_plots)
+
+scat_plots
+```
+
+### How do demographic factors such as age, gender, and political position predict primary dependent variables relating to meat consumption?
+
+```{r h5-analysis, include=FALSE}
+h5.mod <- '
+interest  ~ static + cons_proj + age_c + genderbi + politics
+attitude  ~ static + cons_proj + age_c + genderbi + politics
+expintent_avg ~ static + cons_proj + age_c + genderbi + politics'
+
+h5.fit <- sem(model = h5.mod, data = clean)
+h5.out <- summary(h5.fit, standardized = T, ci = T, fit.measures = T, rsq = T)
+
+h5.table <- h5.out$PE[1:15,c(3, 5, 12, 6:10)] %>%
+  mutate(pvalue = printp(pvalue),
+         rhs = rep(c("Condition$^a$", "Projected consumption", "Age", "Gender$^b$", "Politics$^c$"), 3))
+```
+
+```{r h5-table, results='asis'}
+h5.table %>% 
+  kable(caption = "Full model", row.names = F, escape = F, col.names = c("Model path", "$\\beta$", "$B$", "$SE$", "$z$", "$\\textit{p}$", "$LL$", "$UL$"), digits = 2) %>%
+  add_header_above(c(" " = 6, "95% CI" = 2)) %>%
+  kable_styling() %>%
+  pack_rows(paste0("Interest ~ ($R$ = ", scales::percent(h5.out$PE[37,5]), ")"), 1, 5) %>%
+  pack_rows(paste0("Attitude ~ ($R$ = ", scales::percent(h5.out$PE[38,5]), ")"), 6, 10) %>%
+  pack_rows(paste0("Intention/Expectation ~ ($R$ = ", scales::percent(h5.out$PE[39,5]), ")"), 11, 15) %>%
+  footnote(general_title = "Note.",
+           general = paste0("CI = confidence interval; $LL$ = lower limit; $UL$ = upper limit. Model fit: $\\chi^2$(", h5.out$FIT[["baseline.df"]], ", N = ", h5.out$FIT[["ntotal"]], ") = ", round(h5.out$FIT[["baseline.chisq"]],2), ", $\\textit{p}$ ",
+                            printp(h5.out$FIT[["baseline.pvalue"]]), "; CFI = ", printnum(h5.out$FIT[["cfi"]]), "; RMSEA = ", printnum(h5.out$FIT[["rmsea"]])),
+           alphabet = c("Trending compared to minority norms; ", "Binary coded, 0 = Male, 1 = Female; ", "Scaled from left to right wing"))
+```
+
+### Does conformity moderate the effects of the trend condition on interest in eating less meat?
+
+# Codebook
+
+```{r codebook}
+codebook::codebook_table(clean)
+```

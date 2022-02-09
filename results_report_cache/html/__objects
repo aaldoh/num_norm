@@ -1,0 +1,18 @@
+data-cleaning	assumptions	clean	complete	cutoff	export	fake	fitted	mcd	mcd_mah	mcor	no_out	noveg	random	raw	standardized
+data-overview	age_desc	cron	data_desc	gender_freq	measure_sum	measure.tib
+rand-check	age_stat	gender_stat	nation_stat	pol_stat
+correlation	.results_report_cache/html/correlation_e5a201a77893e0dce5e98855e21d308d_meta
+h1-desc	outcomes_desc	outcomes_tab	outcomes.tib	.results_report_cache/html/h1-desc_cf1bca9f0b68d3fe033e3e750a96dfb1_meta
+h1-analysis	h1.effect	h1.fit	h1.mod	h1.out	h1.rr	h1.table
+h1-table	.results_report_cache/html/h1-table_f4d226dd598fa5a50a2f8440d178f91d_meta
+h1-plots	out_plots
+h2-analysis	cons_desc	h2.test
+h2-table	.results_report_cache/html/h2-table_29acfc8ca93fef4eb722d84b6338ff22_meta
+h3-analysis	h3.effect	h3.fit	h3.mod	h3.out	h3.rr	h3.table
+h3-table	.results_report_cache/html/h3-table_84e5354ebf9f726d14c3d4cf7ffb80f7_meta
+h4-analysis	h4.fit	h4.mod	h4.out	h4.pam	h4.table
+h4-table	.results_report_cache/html/h4-table_e05330dfd34699fe19d70acf9d0ca7b2_meta
+h4-plot	scat_plots
+h5-analysis	h5.fit	h5.mod	h5.out	h5.table
+h5-table	.results_report_cache/html/h5-table_7b8b47f3a536867bd24cf90a7f46910e_meta
+codebook	

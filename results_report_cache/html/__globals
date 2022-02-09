@@ -1,0 +1,18 @@
+data-cleaning	::	!	!=	.	[<-	%>%	<=	==	~	$	abline	across	age	as_factor	att_check	c	cbind	condition	conformity_1	conformity_3	conformity_mean	cons_next_perc_1	cons_now_perc_1	cons_proj	cons_six_perc_1	cor	cov.mcd	droplevels	expectation_1	filter	gender	hist	ifelse	intention_1	interest_1	is.na	list	lm	mahalanobis	mean	meat_cons_1	mutate	na_if	ncol	nrow	plot	politics_1	qchisq	qqnorm	rchisq	recode_factor	RecordedDate	relevel	rename_with	rowMeans	rstudent	saveRDS	scale	select	set_attrs	starts_with	symnum	T	veg
+data-overview	::	.	%>%	$	age	attitude	c	cbind	clean	complete	conformity_1	conformity_6	conformity_mean	cons_proj	describeBy	expintent_avg	interest	max	mcor	mean	meat_cons	min	noveg	nrow	printnum	prop.table	raw	remove_rownames	round	sd	select	summarise	T	table	tibble	unlist
+rand-check	~	$	aov	apa_print	chisq.test	clean	nrow
+correlation	%>%	add_header_above	c	F	kable	kable_styling	measure.tib
+h1-desc	%>%	add_header_above	attitude	c	clean	condition	expintent_avg	F	group_by	interest	kable	kable_styling	mean	n	paste	printnum	sd	summarise	tibble	unlist
+h1-analysis	.	%>%	$	bfrr	c	cbind	clean	list	mutate	order	paste0	printp	pvalue	rhs	sapply	select	sem	summary	T	toString	unlist	with
+h1-table	[[	%>%	$	add_header_above	c	F	footnote	h1.out	h1.table	kable	kable_styling	pack_rows	paste0	printnum	printp	round	T
+h1-plots	::	%>%	~	aes	as_labeller	c	clean	condition	expectation	facet_wrap	geom_violin	ggplot	ggtitle	intention	list	pivot_longer	scale_x_discrete	select	stat_summary	value	xlab	ylab
+h2-analysis	%>%	~	aov	apa_print	clean	condition	cons_next_perc	cons_now_perc	cons_proj	cons_six_perc	group_by	mean	n	sd	summarise
+h2-table	%>%	$	c	cons_desc	F	footnote	h2.test	kable	kable_styling	T
+h3-analysis	.	%>%	$	bfrr	c	cbind	clean	list	mutate	paste0	printp	pvalue	sapply	select	sem	summary	T	toString	unlist
+h3-table	[[	%>%	$	add_header_above	c	F	footnote	h3.out	h3.table	kable	kable_styling	paste0	printnum	printp	round	T
+h4-analysis	.	%>%	~	$	c	clean	mutate	mutate_at	order	parameterEstimates	printp	pvalue	rbind	rhs	select	sem	summary	T	vars	with
+h4-table	[[	%>%	$	add_header_above	c	F	footnote	h4.out	h4.table	kable	kable_styling	pack_rows	paste0	printnum	printp	round	T
+h4-plot	::	%>%	~	aes	as_labeller	c	clean	condition	cons_proj	expectation	F	facet_wrap	geom_smooth	ggplot	ggtitle	intention	loess	pivot_longer	select	stat_summary	value	xlab	ylab
+h5-analysis	%>%	$	c	clean	mutate	printp	pvalue	rep	sem	summary	T
+h5-table	::	[[	%>%	$	add_header_above	c	F	footnote	h5.out	h5.table	kable	kable_styling	pack_rows	paste0	printnum	printp	round
+codebook	::	clean
